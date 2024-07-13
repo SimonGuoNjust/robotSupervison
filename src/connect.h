@@ -42,7 +42,8 @@ private:
     };
 
     connectStateType connectorState{connectStateType::inSearch};
-    char connectMsgBuffer[200];
+    int frameCnt = 0;
+    char connectMsgBuffer[4096];
     char videoPath[60];
     boost::asio::io_service ios;
     boost::asio::ip::udp::socket sUdp;

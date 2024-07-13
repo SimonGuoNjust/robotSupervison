@@ -33,15 +33,34 @@ void Connector::recConnectMsg (udp::endpoint* rc_endpoint, const boost::system::
             {
                 m_sharedMemory->lock();
                 char* to = (char*)m_sharedMemory->data();
-                memcpy(to, connectMsgBuffer, 102);
+                memcpy(to, &c_msg->status, 1);
+                memcpy(to + 1, connectMsgBuffer, 102);
                 m_sharedMemory->unlock(); 
-            emit sig_newDevice();
+                emit sig_newDevice();
             }
         }
         else if (c_msg->status == MREADY)
         {
-            
             connectorState = connectStateType::running;
+        }
+        else if (c_msg->status == MRUNNING)
+        {
+            result_msg* r_msg = (result_msg*)connectMsgBuffer;
+            char* recv_start = r_msg->results;
+            int frame_cnt = *(int*)recv_start;
+            int res_cnt = static_cast<int>(*(recv_start + 4));
+            float* results = (float*)(recv_start + 8);
+            if (frame_cnt > frameCnt)
+            {
+                frameCnt = frame_cnt;
+                m_sharedMemory->lock();
+                char* to = (char*)m_sharedMemory->data();
+                memcpy(to, &c_msg->status, 1);
+                memcpy(to+1, recv_start + 4, 4 + res_cnt * 28);
+                m_sharedMemory->unlock(); 
+                emit sig_newDevice();
+            }
+
         }
         // devices.printDevices();
         
@@ -60,7 +79,7 @@ void Connector::doWork()
             return;
         }
     }
-    if (!shareMemory.create(1024))
+    if (!shareMemory.create(2048))
     {
         qDebug() << shareMemory.errorString();
         return;
@@ -87,34 +106,52 @@ void Connector::doWork()
     {
         if(!isRunning)
         {
-            break;
-        }
-        QThread::msleep(300);
-        if (connectorState == connectStateType::inSearch)
-        {
-            connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, "");
-            ec = sUdp.send_to(boost::asio::buffer(msg.to_string(), 102), bc_endpoint);
-            if (ec < 0)
-            {
-                qDebug() << "send error" << ec;
-            }
-            
-        }
-        else if (connectorState == connectStateType::connecting)
-        {
-            status = MREADY;
+            status = MCLOSE;
             auto to_ep = devices.getConnectedDevice();
-            connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, videoPath);;
+            connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, "");;
             ec = sUdp.send_to(boost::asio::buffer(msg.to_string(), 102), to_ep);
             if (ec < 0)
             {
                 qDebug() << "send error" << ec;
             }
+            break;
         }
+        
+        if (connectorState == connectStateType::inSearch)
+        {
+            connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, "");
+            ec = sUdp.send_to(boost::asio::buffer(msg.to_string(), 102), bc_endpoint);
+            QThread::msleep(300);
+        }
+        else if (connectorState == connectStateType::connecting)
+        {   
+            status = MREADY;
+            // qDebug() << status;
+            auto to_ep = devices.getConnectedDevice();
+            connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, videoPath);;
+            ec = sUdp.send_to(boost::asio::buffer(msg.to_string(), 102), to_ep);
+            
+            QThread::msleep(20);
+        }
+        else if (connectorState == connectStateType::running)
+        {
+            status = MRUNNING;
+            // qDebug() << status;
+            auto to_ep = devices.getConnectedDevice();
+            connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, "");;
+            ec = sUdp.send_to(boost::asio::buffer(msg.to_string(), 102), to_ep);
+            QThread::msleep(20);
+        }
+        if (ec < 0)
+        {
+            qDebug() << "send error" << ec;
+        }
+        
         sUdp.async_receive_from(boost::asio::buffer(connectMsgBuffer), rc_endpoint,
             boost::bind(&Connector::recConnectMsg, this, &rc_endpoint, boost::asio::placeholders::error,
                 boost::asio::placeholders::bytes_transferred));
         ios.poll_one();  
+        
     }
     clear();
         

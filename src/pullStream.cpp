@@ -1,19 +1,78 @@
 #include "pullStream.h"
-#include <QDebug>
-#include <QThread>
- 
-extern "C"
-{
-    #include <libavcodec/avcodec.h>
-    #include <libavformat/avformat.h>
-    #include <libswscale/swscale.h>
-    #include <libavdevice/avdevice.h>
-    #include <libavformat/version.h>
-    #include <libavutil/time.h>
-    #include <libavutil/mathematics.h>
-    #include <libavutil/imgutils.h>
-};
- 
+
+cv::Rect get_rect(int img_width, int img_height, float bbox[4]) {
+    float l, r, t, b;
+    float r_w = 640 / (img_width * 1.0);
+    float r_h = 640 / (img_height * 1.0);
+
+    if (r_h > r_w) {
+        l = bbox[0];
+        r = bbox[2];
+        t = bbox[1] - (640 - r_w * img_height) / 2;
+        b = bbox[3] - (640 - r_w * img_height) / 2;
+        l = l / r_w;
+        r = r / r_w;
+        t = t / r_w;
+        b = b / r_w;
+    } else {
+        l = bbox[0] - (640 - r_h * img_width) / 2;
+        r = bbox[2] - (640 - r_h * img_width) / 2;
+        t = bbox[1];
+        b = bbox[3];
+        l = l / r_h;
+        r = r / r_h;
+        t = t / r_h;
+        b = b / r_h;
+    }
+    l = std::max(0.0f, l);
+    t = std::max(0.0f, t);
+    int width = std::max(0, std::min(int(round(r - l)), img_width - int(round(l))));
+    int height = std::max(0, std::min(int(round(b - t)), img_height - int(round(t))));
+
+    return cv::Rect(int(round(l)), int(round(t)), width, height);
+}
+
+void pullStreamWorker::drawResults(int img_width, int img_height, cv::Mat& img )
+{ 
+    QSharedMemory m_sharedMemory;
+    m_sharedMemory.setKey("msg_recv");
+    if(!m_sharedMemory.attach()){
+    //    qDebug()<<"共享内存失败";
+        return;
+    }
+    // qDebug() << "hg";
+    m_sharedMemory.lock();
+    char type;
+    const char* from = (const char*)m_sharedMemory.data();
+    memcpy(&type, from, 1);
+    if (type != 4) return;
+    int res_cnt = *(int*)(from + 1);
+    if (res_cnt <= 0) return;
+    memcpy(resultsBuff, from + 5, res_cnt * 4 * 7);
+    m_sharedMemory.unlock();
+    m_sharedMemory.detach();
+
+    float* results = (float*)resultsBuff;
+    float bbox[4];
+    for (int i = 0; i < res_cnt; i++) {
+        int basic_pos = i * 7;
+        int keep_flag = results[basic_pos + 6];
+        if (keep_flag == 1) {
+            bbox[0] = results[basic_pos + 0];
+            bbox[1] = results[basic_pos + 1];
+            bbox[2] = results[basic_pos + 2];
+            bbox[3] = results[basic_pos + 3];
+            float conf = results[basic_pos + 4];
+            cv::Rect r = get_rect(img.cols, img.rows, bbox);
+            cv::rectangle(img, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
+            cv::putText(img, "apple", cv::Point(r.x, r.y - 1), cv::FONT_HERSHEY_PLAIN, 1.2,
+                            cv::Scalar(0xFF, 0xFF, 0xFF), 2);
+            cv::putText(img, std::to_string(conf), cv::Point(r.x + 5, r.y - 1), cv::FONT_HERSHEY_PLAIN, 1.2,
+                            cv::Scalar(0xFF, 0xFF, 0xFF), 2);
+        }
+    }  
+}
+
 int pullStreamWorker::runningWorker = 0;
 pullStreamWorker::pullStreamWorker()
     :QObject()
@@ -40,13 +99,13 @@ void pullStreamWorker::doWork()
     avformat_network_init();//初始化网络
  
     //设置传输协议为TCP协议
-    av_dict_set(&options, "rtsp_transport", "tcp", 0);
+    av_dict_set(&options, "rtsp_transport", "udp", 0);
  
     // 设置TCP连接最大延时时间
     av_dict_set(&options, "max_delay", "100", 0);
  
     // 设置“buffer_size”缓存容量
-    av_dict_set(&options, "buffer_size", "1024000", 0);
+    av_dict_set(&options, "buffer_size", "15000000", 0);
  
     // 设置avformat_open_input超时时间为3秒
     av_dict_set(&options, "stimeout", "3000000", 0);
@@ -84,7 +143,8 @@ void pullStreamWorker::doWork()
     }
  
     auto pCodecParameter = pFormatCtx->streams[videoindex]->codecpar;
-    auto pCodec = avcodec_find_decoder(pCodecParameter->codec_id);
+    auto pCodec = avcodec_find_decoder_by_name("h264_cuvid");
+    
     if(pCodec == nullptr)
     {
         workerState = workerStateType::noFildCodec;
@@ -95,7 +155,9 @@ void pullStreamWorker::doWork()
     }
  
     pCodecCtx = avcodec_alloc_context3(pCodec);//初始化一个编解码上下文
- 
+    av_opt_set(pCodecCtx->priv_data, "tune", "zerolatency", 0);
+    pCodecCtx->pkt_timebase.num = pFormatCtx->streams[videoindex]->time_base.num; // 我的是加了这里才正常
+    pCodecCtx->pkt_timebase.den = pFormatCtx->streams[videoindex]->time_base.den; // 我的是加了这里才正常
     //pCodecParameter中的流参数复制到pCodecCtx
     avcodec_parameters_to_context(pCodecCtx,pCodecParameter);
  
@@ -138,7 +200,6 @@ void pullStreamWorker::doWork()
  
     //用于视频图像的转换，将源数据转换为目标数据
     
-    av_opt_set(pCodecCtx->priv_data, "tune", "zerolatency", 0);
     img_convert_ctx = sws_getContext(pCodecCtx->width,
                                     pCodecCtx->height,
                                     pCodecCtx->pix_fmt,
@@ -170,11 +231,11 @@ void pullStreamWorker::doWork()
  
              if(avcodec_receive_frame(pCodecCtx, pFrame) != 0)
              {  
-                // qDebug() << avcodec_receive_frame(pCodecCtx, pFrame);
+                qDebug() << avcodec_receive_frame(pCodecCtx, pFrame);
                  qDebug()<<"从解码器返回解码后的输出数据出错";
                  continue;
              }
- 
+            // qDebug()<<"frame " << pFrame->pts << " arrive" << endl;
              //此函数可以：1.图像色彩空间转换；2.分辨率缩放；3.前后图像滤波处理。
              sws_scale(img_convert_ctx,
                        static_cast<const uchar* const*>(pFrame->data),
@@ -183,17 +244,17 @@ void pullStreamWorker::doWork()
                        pCodecCtx->height,
                        pFrameRGB->data,
                        pFrameRGB->linesize);
- 
+            // img.data = static_cast<uchar*>(pFrameRGB->data[0]);
+                 
+            // cv::Mat img(cv::Size(pCodecCtx->width, pCodecCtx->height), CV_8UC3, static_cast<uchar*>(pFrameRGB->data[0]));
+            // drawResults(pCodecCtx->width, pCodecCtx->height, img);
              pixmap = QPixmap::fromImage(QImage(static_cast<uchar*>(pFrameRGB->data[0]),
                                                 pCodecCtx->width,
                                                 pCodecCtx->height,
                                                 QImage::Format_RGB32));
-            emit sendPixmap(QPixmap::fromImage(QImage((uchar*)pFrameRGB->data[0],
-                                                              pCodecCtx->width,
-                                                              pCodecCtx->height,
-                                                              QImage::Format_RGB32)));
+            emit sendPixmap(pixmap);
  
-             QThread::msleep(40);
+             QThread::msleep(5);
         }
     }
  

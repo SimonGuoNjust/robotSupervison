@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1300</width>
-    <height>754</height>
+    <width>1500</width>
+    <height>1615</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,7 +19,7 @@
    </property>
    <layout class="QHBoxLayout" name="horizontalLayout_2">
     <item>
-     <layout class="QVBoxLayout" name="verticalLayout" stretch="1,1,1,10">
+     <layout class="QVBoxLayout" name="verticalLayout" stretch="1,0,20">
       <property name="spacing">
        <number>5</number>
       </property>
@@ -76,33 +76,101 @@
        </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="bt1">
-        <property name="text">
-         <string>start</string>
-        </property>
-       </widget>
+       <layout class="QGridLayout" name="gridLayout">
+        <item row="2" column="0">
+         <widget class="QPushButton" name="bt2">
+          <property name="text">
+           <string>stop</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="0">
+         <widget class="QPushButton" name="bt4">
+          <property name="text">
+           <string>clear</string>
+          </property>
+          <property name="flat">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QPushButton" name="bt1">
+          <property name="text">
+           <string>start</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="bt2">
-        <property name="text">
-         <string>stop</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,1">
+       <layout class="QHBoxLayout" name="horizontalLayout" stretch="1,4">
         <property name="spacing">
          <number>8</number>
         </property>
         <item>
-         <widget class="QLabel" name="label">
-          <property name="text">
-           <string>TextLabel</string>
+         <widget class="QScrollArea" name="scrollArea">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
           </property>
+          <property name="autoFillBackground">
+           <bool>false</bool>
+          </property>
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <widget class="QWidget" name="scrollAreaWidgetContents">
+           <property name="geometry">
+            <rect>
+             <x>0</x>
+             <y>0</y>
+             <width>292</width>
+             <height>1407</height>
+            </rect>
+           </property>
+           <layout class="QHBoxLayout" name="horizontalLayout_4">
+            <item>
+             <widget class="QLabel" name="debugInfo">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>274</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="text">
+               <string/>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
          </widget>
         </item>
         <item>
-         <widget class="QOpenGLWidget" name="openGLWidget"/>
+         <layout class="QVBoxLayout" name="verticalLayout_3">
+          <item>
+           <widget class="QLabel" name="label">
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QOpenGLWidget" name="openGLWidget"/>
+          </item>
+         </layout>
         </item>
        </layout>
       </item>

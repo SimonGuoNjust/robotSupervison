@@ -3,6 +3,8 @@
 #define MREADY 1
 #define MCONFIRM 2
 #define MSEARCH 3
+#define MRUNNING 4
+#define MCLOSE 5
 #include <string>
 
 struct connect_msg
@@ -31,6 +33,14 @@ struct connect_msg
     {
         return (char*) this;
     }
+};
+
+class result_msg
+{
+public:
+    char senderName[20];
+    char status;
+    char results[2000];
 };
 
 typedef connect_msg* msg_ptr;
