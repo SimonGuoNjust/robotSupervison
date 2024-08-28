@@ -128,7 +128,7 @@
              <x>0</x>
              <y>0</y>
              <width>292</width>
-             <height>1407</height>
+             <height>1382</height>
             </rect>
            </property>
            <layout class="QHBoxLayout" name="horizontalLayout_4">
@@ -168,7 +168,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QOpenGLWidget" name="openGLWidget"/>
+           <widget class="PoinCloudWidget" name="pcvis" native="true"/>
           </item>
          </layout>
         </item>
@@ -180,6 +180,14 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>PoinCloudWidget</class>
+   <extends>QWidget</extends>
+   <header>pointcloud.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

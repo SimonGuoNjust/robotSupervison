@@ -1,9 +1,20 @@
 #include "mainwindow.h"
+#include "connect.h"
+#include "pointcloud.h"
 #include "ui_mainwindow.h"
+#include <QVTKOpenGLNativeWidget.h>
+#include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
 #include <iostream>
+#include <pcl/impl/point_types.hpp>
+#include <pcl/memory.h>
+#include <pcl/point_cloud.h>
+#include <vtkSmartPointer.h>
+#include <vtkSmartPointerBase.h>
 enum { max_length = 1024};
 MainWindow* MainWindow::mainwindow = NULL;
-
+QMutex pc_m;
 void MainWindow::customMessageHandler(QtMsgType type, 
                           const QMessageLogContext &context,
                           const QString &msg)
@@ -71,13 +82,21 @@ MainWindow::MainWindow(QWidget *parent) :
     QString streamPath = ui->stremPath_label->toPlainText();
     this->psworker->setVideoPath(streamPath);
     this->psworker->moveToThread(&pullStreamThread);
+    this->pcdecoder = new PointCloudDecoder();
+    this->pcdecoder->moveToThread(&pointcloudThread);
+
+    qRegisterMetaType<boost::shared_ptr<boost::asio::ip::tcp::iostream>>("boost::shared_ptr<boost::asio::ip::tcp::iostream>");
+    qRegisterMetaType<pcl::PointCloud<pcl::PointXYZ>::Ptr>("pcl::PointCloud<pcl::PointXYZ>::Ptr");
     connect(this,&MainWindow::threadStartWork,psworker,&pullStreamWorker::doWork);
     connect(this,&MainWindow::connectorStartWork,connector,&Connector::doWork);
+    connect(this, &MainWindow::pcdecoderStartWork, pcdecoder, &PointCloudDecoder::doWork);
     connect(this,&MainWindow::threadStopWork,psworker,&pullStreamWorker::stopWork, Qt::DirectConnection);
     connect(this,&MainWindow::connectorStopWork,connector,&Connector::stopWork, Qt::DirectConnection);
+    connect(this, &MainWindow::pcdecoderStopWork, pcdecoder, &PointCloudDecoder::stopWork);
     connect(psworker, &pullStreamWorker::sendPixmap,this,&MainWindow::onSendPixmap);
     connect(psworker, &pullStreamWorker::finished, this, &MainWindow::onWorkered);
     connect(connector, &Connector::finished, this, &MainWindow::onWorkered);
+    connect(pcdecoder, &PointCloudDecoder::finished, this, &MainWindow::onWorkered);
     connect(this, &MainWindow::beginConnect, connector, &Connector::connect, Qt::DirectConnection);
     connect(ui->bt1,&QPushButton::clicked,this,&MainWindow::threadRun);
     connect(ui->bt2, &QPushButton::clicked,this,&MainWindow::stopThread);
@@ -86,6 +105,8 @@ MainWindow::MainWindow(QWidget *parent) :
     // connect(this->refreshTimer, &QTimer::timeout, this, &MainWindow::refresh);
     connect(connector, &Connector::sig_newDevice, this, &MainWindow::refresh);
     connect(this->refreshTimer, &QTimer::timeout, this, &MainWindow::windowRefresh);
+    connect(connector, &Connector::sig_tcpNotify, pcdecoder, &PointCloudDecoder::onTcpNotify, Qt::DirectConnection);
+    connect(pcdecoder, &PointCloudDecoder::pcUpdate, this, &MainWindow::onPointcloudUpdate, Qt::DirectConnection);
 
     QPalette p;
     p.setColor(QPalette::Background, Qt::black);
@@ -104,6 +125,13 @@ MainWindow::MainWindow(QWidget *parent) :
     }
     emit connectorStartWork();
 
+    if (!pointcloudThread.isRunning())
+    {
+        qDebug() << "pointcloud starts";
+        pointcloudThread.start();
+    }
+    emit pcdecoderStartWork();
+
     QProcess *process = new QProcess();
     process->start("D:\\mediamtx\\mediamtx.exe");
     connect(process, &QProcess::readyRead, [=](){
@@ -111,6 +139,29 @@ MainWindow::MainWindow(QWidget *parent) :
         qDebug()<<"[mediamtx]"<< procOutput.data();
     });
 
+    //点云加载
+    // pointcloud.reset(new pcl::PointCloud<pcl::PointXYZ>);
+    // this->pcdecoder->setPointCloud(pointcloud);
+    // pcl::io::loadPCDFile<pcl::PointXYZ>("D:/Files/dev/robotSupervison/src/rabbit.pcd", *pointcloud);
+    // pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(pointcloud, red, green, blue);//自定义点云颜色
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pointcloud(new pcl::PointCloud<pcl::PointXYZ>);
+    ui->pcvis->viewer->addPointCloud<pcl::PointXYZ>(pointcloud, "cloud");
+    ui->pcvis->viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1.0, "cloud");//设置点云单个点的大小
+    ui->pcvis->viewer->addCoordinateSystem(1);
+    ui->pcvis->viewer->initCameraParameters();
+    ui->pcvis->viewer->setCameraPosition(-0.83, -0.522, -0.91, 0.0912, -0.970, 0.226);
+    // ui->pcvis->SetRenderWindow(viewer->getRenderWindow());
+    // viewer->setupInteractor(ui->pcvis->GetInteractor(), ui->pcvis->GetRenderWindow());
+    ui->pcvis->update();
+}    
+
+void MainWindow::onPointcloudUpdate(pcl::PointCloud<pcl::PointXYZ>::Ptr pc)
+{
+    // qDebug() << "update"; 
+    pc_m.lock();
+    ui->pcvis->viewer->updatePointCloud(pc, "cloud");
+    ui->pcvis->update();
+    pc_m.unlock();
 }
 
 void MainWindow::windowRefresh()
@@ -155,45 +206,11 @@ void MainWindow::refresh()
     }
     m_sharedMemory.unlock();
     m_sharedMemory.detach();
-    
 }
 
 void MainWindow::onSendPixmap(const QPixmap &pixmap)
 {   
-    // qDebug() << "refresh";
-
-    // if (res_cnt > 0)
-    // {
-        // QImage qImage = pixmap.toImage();
-    //     QPainter painter;
-    //     painter.begin(&qImage);
-    //     painter.setPen(QPen(Qt::red));
-    //     float* results = (float*)resultsBuff;
-    //     float bbox[4];
-    //     for (int i = 0; i < res_cnt; i++) {
-    //         int basic_pos = i * 7;
-    //         int keep_flag = results[basic_pos + 6];
-    //         if (keep_flag == 1) {
-    //             bbox[0] = results[basic_pos + 0];
-    //             bbox[1] = results[basic_pos + 1];
-    //             bbox[2] = results[basic_pos + 2];
-    //             bbox[3] = results[basic_pos + 3];
-    //             // qDebug() << c_x << c_y << w << h;
-    //             QRectF rect = get_rect(ui->label->width(), ui->label->height(), bbox);
-    //             painter.drawRect(rect);
-    //             float conf = results[basic_pos + 4];
-    //             painter.drawText(rect.x(), rect.y(), QString::fromStdString(std::to_string(conf)));
-    //             painter.drawText(rect.x(), rect.y() - 10, tr("apple"));
-    //     }
-
-    //     }
-    //     painter.end();
-    //     ui->label->setPixmap(QPixmap::fromImage(qImage).scaled(ui->label->size()));
-    // }
-    // else
-    // {
-        ui->label->setPixmap(pixmap.scaled(ui->label->size()));
-    // }
+    ui->label->setPixmap(pixmap.scaled(ui->label->size()));
 }
 
 void MainWindow::threadRun()
@@ -228,6 +245,12 @@ void MainWindow::onWorkered()
         connectThread.quit();
         connectThread.wait();
     }
+    if (worker == pcdecoder)
+    {
+        qDebug()<<"pointcloud finished";
+        pointcloudThread.quit();
+        pointcloudThread.wait();
+    }
 }
 
 
@@ -235,6 +258,7 @@ MainWindow::~MainWindow()
 {
     emit threadStopWork();
     emit connectorStopWork();
+    emit pcdecoderStopWork();
  
     if(pullStreamThread.isRunning())
     {
@@ -246,8 +270,14 @@ MainWindow::~MainWindow()
         connectThread.quit();
         connectThread.wait();
     }
+    if(pointcloudThread.isRunning())
+    {
+        pointcloudThread.quit();
+        pointcloudThread.wait();
+    }
     psworker->deleteLater();
     connector->deleteLater();
+    pcdecoder->deleteLater();
 
     delete ui;
 }

@@ -1,4 +1,3 @@
-
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 #include <QMainWindow>
@@ -8,8 +7,14 @@
 #include <QThread>
 #include <QDebug>
 #include <QTimer>
+#include <boost/smart_ptr/shared_ptr.hpp>
+#include <cstddef>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 #include "pullStream.h"
 #include "connect.h"
+#include "pcdecoder.h"
+#include <QVTKOpenGLNativeWidget.h>
 
 QRectF get_rect(int img_width, int img_height, float bbox[4]);
 
@@ -31,6 +36,7 @@ public:
     void windowRefresh();
     void Connect();
     void clearOutput();
+    void onPointcloudUpdate(pcl::PointCloud<pcl::PointXYZ>::Ptr  pc);
     ~MainWindow();
 
 signals:
@@ -38,6 +44,8 @@ signals:
     void threadStopWork();
     void connectorStartWork();
     void connectorStopWork();
+    void pcdecoderStartWork();
+    void pcdecoderStopWork();
     void beginConnect(const QString&);
 
 private:
@@ -49,8 +57,10 @@ private:
     QTimer* refreshTimer;
     pullStreamWorker* psworker;
     Connector* connector;
+    PointCloudDecoder* pcdecoder;
     QThread connectThread;
     QThread pullStreamThread;
+    QThread pointcloudThread;
     static MainWindow* mainwindow;
 };
 #endif // MAINWINDOW_H

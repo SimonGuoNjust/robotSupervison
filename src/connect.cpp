@@ -1,7 +1,7 @@
 #include "connect.h"
-#include <iostream>
-#include <QSharedMemory>
+
 using boost::asio::ip::udp;
+using boost::asio::ip::tcp;
  
 int Connector::runningWorker = 0;
 Connector::Connector()
@@ -95,13 +95,12 @@ void Connector::doWork()
     isRunning = true;
     auto rc_endpoint = boost::asio::ip::udp::endpoint();
     auto bc_endpoint = boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::broadcast(), targetPortUdp);
-
     char user_name[20] = "admin";
     char status = MSEARCH;
     char ip_addr[16] = "192.168.137.1";
     unsigned short tcp_port = 27777;
     int ec;
-    // ios.run();
+
     while(1)
     {
         if(!isRunning)
@@ -126,8 +125,8 @@ void Connector::doWork()
         else if (connectorState == connectStateType::connecting)
         {   
             status = MREADY;
-            // qDebug() << status;
             auto to_ep = devices.getConnectedDevice();
+            // qDebug() << status;
             connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, videoPath);;
             ec = sUdp.send_to(boost::asio::buffer(msg.to_string(), 102), to_ep);
             
@@ -136,8 +135,20 @@ void Connector::doWork()
         else if (connectorState == connectStateType::running)
         {
             status = MRUNNING;
-            // qDebug() << status;
             auto to_ep = devices.getConnectedDevice();
+            if (sTcp == nullptr)
+            {
+                sTcp.reset(new boost::asio::ip::tcp::iostream(to_ep.address().to_string().c_str(), "6666"));
+                if (!(*sTcp))
+                {
+                    qDebug() << "waiting tcp connection";
+                    sTcp = nullptr;
+                }
+                else {
+                    qDebug() << "send tcp notification";
+                    emit sig_tcpNotify(sTcp);
+                }
+            }
             connect_msg msg = connect_msg(user_name, status, ip_addr, std::strlen(ip_addr), tcp_port, "");;
             ec = sUdp.send_to(boost::asio::buffer(msg.to_string(), 102), to_ep);
             QThread::msleep(20);

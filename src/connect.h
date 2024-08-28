@@ -1,6 +1,7 @@
 #ifndef CONNECT_H
 #define CONNECT_H
 #include <boost/asio.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #include <boost/bind.hpp>
 #include "utils.h"
 #include <QObject>
@@ -10,6 +11,13 @@
 #include <QDebug>
 #include <QThread>
 #include <QSharedMemory>
+#include <boost/smart_ptr/shared_ptr.hpp>
+#include <cstddef>
+#include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
+#include <iostream>
+#include <pcl/point_cloud.h>
 
 class Connector: public QObject
 {
@@ -31,6 +39,7 @@ public:
 signals:
     void finished();
     void sig_newDevice();
+    void sig_tcpNotify(boost::shared_ptr<boost::asio::ip::tcp::iostream>);
  
 private:
     void recConnectMsg(boost::asio::ip::udp::endpoint* rc_endpoint, const boost::system::error_code& error, std::size_t);
@@ -47,6 +56,7 @@ private:
     char videoPath[60];
     boost::asio::io_service ios;
     boost::asio::ip::udp::socket sUdp;
+    boost::shared_ptr<boost::asio::ip::tcp::iostream> sTcp = nullptr;
     unsigned short targetPortUdp = 27777;
     bool isRunning{false};
     QMutex mutex;
